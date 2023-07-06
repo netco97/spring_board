@@ -2,6 +2,8 @@ package com.example.board.service;
 
 import com.example.board.dto.BoardDTO;
 import com.example.board.entity.BoardEntity;
+import com.example.board.entity.BoardFileEntity;
+import com.example.board.repository.BoardFileRepository;
 import com.example.board.repository.BoardRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -10,7 +12,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -22,9 +27,40 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class BoardService {
     private final BoardRepository boardRepository;
-    public void save(BoardDTO boardDTO) {
-        BoardEntity boardEntity = BoardEntity.toSaveEntity(boardDTO);
-        boardRepository.save(boardEntity); //insert 쿼리 작동(JPA의 Repository.save)
+
+    private final BoardFileRepository boardFileRepository;
+    public void save(BoardDTO boardDTO) throws IOException {
+        // 파일 첨부 여부에 따라 로직 분리
+        if(boardDTO.getBoardFile().isEmpty()){
+            // 첨부 파일이 없는경우
+            BoardEntity boardEntity = BoardEntity.toSaveEntity(boardDTO);
+            boardRepository.save(boardEntity); //insert 쿼리 작동(JPA의 Repository.save)
+        }else{
+            // 첨부 파일이 있는경우
+            /*
+                DB저장 과정
+                1. DTO에 담긴 파일을 꺼냄
+                2. 파일의 이름 가져옴
+                3. 서버 저장용 이름을 만듬
+                // 내사진.jpg => 8397434893_내사진.jpg (난수 처리) UUID를 사용해도되나 여기서는 다른방식으로함.
+                4. 저장 경로 설정
+                5. 해당 경로에 파일 저장
+                6. board_table에 해당 데이터 save처리
+                7. board_file_table에 해당 데이터 save 처리
+             */
+            MultipartFile boardFile = boardDTO.getBoardFile(); // 1.
+            String originalFilename = boardFile.getOriginalFilename(); // 2.
+            String storedFileName = System.currentTimeMillis() + "_" + originalFilename; // 3.
+            String savePath = "/Users/isangmin/springboot_img/" + storedFileName; // /springboot_img/98432984392_내사진.jpg 4.
+            boardFile.transferTo(new File(savePath)); // 5.
+            BoardEntity boardEntity = BoardEntity.toSaveFileEntity(boardDTO);
+            Long saveId = boardRepository.save(boardEntity).getId();
+            BoardEntity board = boardRepository.findById(saveId).get(); // 6.
+
+            BoardFileEntity boardFileEntity = BoardFileEntity.toBoardFileEntity(board, originalFilename, storedFileName);
+            boardFileRepository.save(boardFileEntity); // 7.
+        }
+
     }
 
     public List<BoardDTO> findAll() {
